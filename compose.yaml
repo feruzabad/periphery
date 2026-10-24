@@ -1,0 +1,44 @@
+#####################################
+# 🦎 KOMODO - remote Periphery 🦎   #
+#####################################
+#
+# Runs on each remote VPS. Publishes NO ports: Periphery dials out to Core's Tailscale
+# sidecar over HTTPS (outbound mode) and authenticates with a Noise key handshake.
+#
+# Usage: cp env.example .env && $EDITOR .env && docker compose up -d
+
+services:
+  periphery:
+    image: ghcr.io/moghtech/komodo-periphery:2.3.4@sha256:71da0378b22d541b9b84390ffdb69863a8eeb5b16bbd9d457eb26a37a1be022e
+    init: true
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "5"
+    environment:
+      TZ: ${TZ:-Europe/Berlin}
+      PERIPHERY_CORE_ADDRESS: wss://${CORE_HOST:?set CORE_HOST}
+      PERIPHERY_CONNECT_AS: ${PERIPHERY_CONNECT_AS:?set PERIPHERY_CONNECT_AS}
+      ## Only needed for the first connection; remove from .env afterwards.
+      PERIPHERY_ONBOARDING_KEY: ${PERIPHERY_ONBOARDING_KEY:-}
+      ## Core's public key is written here on first connect and pinned afterwards.
+      PERIPHERY_CORE_PUBLIC_KEYS: file:/config/keys/core.pub
+      PERIPHERY_ROOT_DIRECTORY: ${PERIPHERY_ROOT_DIRECTORY:-/etc/komodo}
+      PERIPHERY_DISABLE_TERMINALS: ${PERIPHERY_DISABLE_TERMINALS:-true}
+      PERIPHERY_DISABLE_CONTAINER_TERMINALS: ${PERIPHERY_DISABLE_CONTAINER_TERMINALS:-true}
+      PERIPHERY_INCLUDE_DISK_MOUNTS: ${PERIPHERY_INCLUDE_DISK_MOUNTS:-/etc/hostname}
+      PERIPHERY_LOGGING_PRETTY: ${PERIPHERY_LOGGING_PRETTY:-false}
+    volumes:
+      - ./keys:/config/keys
+      # Docker socket == root on this host. Required for Periphery to manage containers.
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /proc:/proc
+      # Must be identical inside and outside the container.
+      - ${PERIPHERY_ROOT_DIRECTORY:-/etc/komodo}:${PERIPHERY_ROOT_DIRECTORY:-/etc/komodo}
+    # MagicDNS doesn't reach containers: resolve Core's sidecar to its Tailscale IP.
+    extra_hosts:
+      - ${CORE_HOST}:${CORE_TAILSCALE_IP:?set CORE_TAILSCALE_IP}
